@@ -1,6 +1,6 @@
 import { actx } from './audio.js';
 
-export async function startRecording({ onLevel } = {}) {
+export async function startRecording({ onLevel, onWave } = {}) {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: true, noiseSuppression: true },
   });
@@ -8,13 +8,14 @@ export async function startRecording({ onLevel } = {}) {
   const mimeType = mimes.find((t) => window.MediaRecorder && MediaRecorder.isTypeSupported(t));
   const rec = new MediaRecorder(stream, mimeType ? { mimeType, audioBitsPerSecond: 32000 } : undefined);
 
-  // level meter
+  // level meter + live waveform
   const c = actx();
   const src = c.createMediaStreamSource(stream);
   const an = c.createAnalyser();
-  an.fftSize = 512;
+  an.fftSize = 1024;
   src.connect(an);
   const td = new Uint8Array(an.fftSize);
+  const wave = new Float32Array(an.fftSize);
   let metering = true;
   const meterLoop = () => {
     if (!metering) return;
@@ -24,7 +25,11 @@ export async function startRecording({ onLevel } = {}) {
       const v = (td[i] - 128) / 128;
       s += v * v;
     }
-    onLevel && onLevel(Math.sqrt(s / td.length));
+    if (onLevel) onLevel(Math.sqrt(s / td.length));
+    if (onWave) {
+      an.getFloatTimeDomainData(wave);
+      onWave(wave);
+    }
     requestAnimationFrame(meterLoop);
   };
   meterLoop();

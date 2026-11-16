@@ -1,4 +1,3 @@
-import { readSession } from './session.js';
 import { json } from './util.js';
 
 const MAX_PLAYERS = 5;
@@ -92,19 +91,14 @@ export class Room {
     const url = new URL(request.url);
     const code = url.pathname.split('/').pop().toUpperCase();
 
-    let user = null;
-    try { user = await readSession(request, this.env); } catch {}
-    if (!user && this.env.DEV_BYPASS_AUTH === '1') {
-      const u = url.searchParams.get('u');
-      if (u) {
-        try { user = JSON.parse(atob(u.replace(/-/g, '+').replace(/_/g, '/'))); } catch {}
-      }
+    // Login-free identity: a stable per-browser id plus a nickname.
+    const pid = url.searchParams.get('pid');
+    if (!pid || !/^[A-Za-z0-9_-]{6,64}$/.test(pid)) {
+      return json({ error: 'bad player id' }, 400);
     }
-    if (!user || !user.sub) return json({ error: 'Sign in with Google to play online' }, 401);
-
-    const sub = String(user.sub).slice(0, 64);
-    const name = String(user.name || 'Player').slice(0, 18).trim() || 'Player';
-    const pic = String(user.pic || '').slice(0, 300);
+    const name = (url.searchParams.get('name') || '').trim().slice(0, 18) || 'Player';
+    const sub = pid;
+    const pic = '';
 
     if (!s) {
       this.s = {

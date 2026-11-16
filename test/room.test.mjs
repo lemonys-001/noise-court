@@ -44,12 +44,8 @@ function makeCtx() {
   };
 }
 
-const envNoBypass = { SESSION_SECRET: 'x' };
-const env = { DEV_BYPASS_AUTH: '1', SESSION_SECRET: 'x' };
-
-function joinReq(code, user) {
-  let url = `https://test/api/room/${code}`;
-  if (user) url += `?u=${encodeURIComponent(Buffer.from(JSON.stringify(user)).toString('base64url'))}`;
+function joinReq(code, pid, name = 'Player') {
+  const url = `https://test/api/room/${code}?pid=${encodeURIComponent(pid)}&name=${encodeURIComponent(name)}`;
   return new Request(url, { headers: { upgrade: 'websocket' } });
 }
 
@@ -57,25 +53,25 @@ function joinReq(code, user) {
 function harness() {
   const dos = new Map();
   return {
-    async join(code, user, envOverride) {
+    async join(code, pid, name) {
       if (!dos.has(code)) {
         const ctx = makeCtx();
-        dos.set(code, { ctx, room: new Room(ctx, envOverride || env) });
+        dos.set(code, { ctx, room: new Room(ctx, {}) });
       }
       const { ctx, room } = dos.get(code);
-      const res = await room.fetch(joinReq(code, user));
+      const res = await room.fetch(joinReq(code, pid, name));
       return { res, ws: ctx.sockets.at(-1), ctx, room };
     },
   };
 }
 
-function msg(ws, m) { return ws ? ws.last(m) : null; }
+function msg(ws, t) { return ws.last(t); }
 
 test('room: full game lobby → 3 rounds → wheel → standings', async () => {
   const h = harness();
-  const a = await h.join('SMOK', { sub: 'u1', name: 'Al' });
+  const a = await h.join('SMOK', 'player-a', 'Al');
   assert.equal(a.res.status, 101);
-  const b = await h.join('SMOK', { sub: 'u2', name: 'Bo' });
+  const b = await h.join('SMOK', 'player-b', 'Bo');
   assert.equal(b.res.status, 101);
 
   const st = msg(a.ws, 'state');
@@ -84,11 +80,11 @@ test('room: full game lobby → 3 rounds → wheel → standings', async () => {
 
   await a.room.webSocketMessage(a.ws, JSON.stringify({ t: 'ready', v: true }));
   await b.room.webSocketMessage(b.ws, JSON.stringify({ t: 'ready', v: true }));
-  await a.room.webSocketMessage(a.ws, JSON.stringify({ t: 'start', deck: ['demo:siren', 'demo:beep', 'demo:boing'] }));
+  await a.room.webSocketMessage(a.ws, JSON.stringify({ t: 'start', deck: ['siren', 'beep', 'boing'] }));
 
   const round = msg(a.ws, 'round');
   assert.equal(round.i, 0);
-  assert.equal(round.sound, 'demo:siren');
+  assert.equal(round.sound, 'siren');
 
   await a.room.webSocketMessage(a.ws, JSON.stringify({ t: 'roundReady' }));
   await b.room.webSocketMessage(b.ws, JSON.stringify({ t: 'roundReady' }));
@@ -119,26 +115,23 @@ test('room: full game lobby → 3 rounds → wheel → standings', async () => {
   assert.ok(end.standings[0].score >= end.standings[1].score);
 });
 
-test('room: rejects unsigned joins when bypass is off', async () => {
+test('room: rejects bad player ids and caps at 5 players', async () => {
   const h = harness();
-  const { res } = await h.join('NOPE', { sub: 'u1', name: 'x' }, envNoBypass);
-  assert.equal(res.status, 401);
-});
+  const bad = await h.join('NOPE', 'x', 'x');
+  assert.equal(bad.res.status, 400);
 
-test('room: caps at 5 players', async () => {
-  const h = harness();
   for (let i = 1; i <= 5; i++) {
-    const { res } = await h.join('FULL', { sub: `u${i}`, name: `p${i}` });
+    const { res } = await h.join('FULL', `player-${i}`, `p${i}`);
     assert.equal(res.status, 101);
   }
-  const { res } = await h.join('FULL', { sub: 'u6', name: 'p6' });
+  const { res } = await h.join('FULL', 'player-6', 'p6');
   assert.equal(res.status, 403);
 });
 
 test('room: host-only controls and deck validation', async () => {
   const h = harness();
-  const a = await h.join('CTRL', { sub: 'u1', name: 'host' });
-  const b = await h.join('CTRL', { sub: 'u2', name: 'peer' });
+  const a = await h.join('CTRL', 'player-a', 'host');
+  const b = await h.join('CTRL', 'player-b', 'peer');
   // non-host start is ignored
   await b.room.webSocketMessage(b.ws, JSON.stringify({ t: 'start', deck: ['x'] }));
   assert.equal(msg(b.ws, 'round'), null);
@@ -148,7 +141,7 @@ test('room: host-only controls and deck validation', async () => {
   await a.room.webSocketMessage(a.ws, JSON.stringify({ t: 'start', deck: 'nope' }));
   assert.equal(msg(a.ws, 'state').phase, 'lobby');
   // good deck starts
-  await a.room.webSocketMessage(a.ws, JSON.stringify({ t: 'start', deck: ['demo:siren'] }));
+  await a.room.webSocketMessage(a.ws, JSON.stringify({ t: 'start', deck: ['siren'] }));
   assert.equal(msg(a.ws, 'round').i, 0);
   // double submit ignored — first take (5) sticks, second (99) is dropped
   await a.room.webSocketMessage(a.ws, JSON.stringify({ t: 'submit', score: 5, audio: null, dur: 100 }));
@@ -161,19 +154,19 @@ test('room: host-only controls and deck validation', async () => {
   await a.room.onAlarm();
   const takes = msg(a.ws, 'takes');
   assert.equal(takes.takes.length, 2);
-  assert.equal(takes.takes.find((t) => t.sub === 'u1').score, 5);
-  assert.equal(takes.takes.find((t) => t.sub === 'u2').score, 0);
+  assert.equal(takes.takes.find((t) => t.sub === 'player-a').score, 5);
+  assert.equal(takes.takes.find((t) => t.sub === 'player-b').score, 0);
 });
 
 test('room: disconnect marks player away, reconnect restores', async () => {
   const h = harness();
-  const a = await h.join('DISC', { sub: 'u1', name: 'host' });
-  const b = await h.join('DISC', { sub: 'u2', name: 'peer' });
+  const a = await h.join('DISC', 'player-a', 'host');
+  const b = await h.join('DISC', 'player-b', 'peer');
   await b.room.webSocketClose(b.ws);
   let st = msg(a.ws, 'state');
-  assert.equal(st.players.find((p) => p.sub === 'u2').connected, false);
-  const b2 = await h.join('DISC', { sub: 'u2', name: 'peer' });
+  assert.equal(st.players.find((p) => p.sub === 'player-b').connected, false);
+  const b2 = await h.join('DISC', 'player-b', 'peer');
   assert.equal(b2.res.status, 101);
   st = msg(a.ws, 'state');
-  assert.equal(st.players.find((p) => p.sub === 'u2').connected, true);
+  assert.equal(st.players.find((p) => p.sub === 'player-b').connected, true);
 });

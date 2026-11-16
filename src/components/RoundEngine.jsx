@@ -66,8 +66,8 @@ export default function RoundEngine({ deck, players, onTurn, onFinish, abort }) 
   return (
     <div className="engine">
       <header className="roundhead">
-        <span className="chip">Sound {soundIdx + 1}/{deck.length}</span>
-        {list.length > 1 && <span className="chip teal">{list[playerIdx]}'s turn</span>}
+        <span className="tag">Sound {soundIdx + 1}/{deck.length}</span>
+        {list.length > 1 && <span className="tag sab">{list[playerIdx]}'s turn</span>}
         <h2 className="soundtitle">{soundTitle(soundId)}</h2>
       </header>
 

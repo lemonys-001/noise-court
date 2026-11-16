@@ -1,14 +1,11 @@
 // End-to-end room test: two WS clients join, start, submit, replay, wheel.
-// Uses DEV_BYPASS_AUTH (from .dev.vars) so no real Google account is needed.
+// Login-free identity: each client passes pid + name in the query string.
 import assert from 'node:assert/strict';
 import { execSync } from 'node:child_process';
-import { existsSync, writeFileSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { unstable_dev } from 'wrangler';
 import WebSocket from 'ws';
 
-if (!existsSync('.dev.vars')) {
-  writeFileSync('.dev.vars', 'SESSION_SECRET="dev-secret"\nDEV_BYPASS_AUTH="1"\n');
-}
 if (!existsSync('dist')) {
   console.log('building frontend first…');
   execSync('npm run build', { stdio: 'inherit' });
@@ -44,20 +41,17 @@ function client(url) {
   };
 }
 
-const u = (sub, name) =>
-  encodeURIComponent(Buffer.from(JSON.stringify({ sub, name })).toString('base64url'));
 
 let worker;
 try {
   worker = await unstable_dev('worker.js', { experimental: { disableExperimentalWarning: true } });
   const base = `http://127.0.0.1:${worker.port}`;
 
-  const cfg = await (await fetch(`${base}/api/config`)).json();
-  assert.ok('clientId' in cfg, 'config endpoint works');
+  assert.ok((await (await fetch(base)).text()).includes('root'), 'static assets served');
 
   const wsBase = `ws://127.0.0.1:${worker.port}/api/room/SMOK`;
-  const c1 = client(`${wsBase}?u=${u('u1', 'Al')}`);
-  const c2 = client(`${wsBase}?u=${u('u2', 'Bo')}`);
+  const c1 = client(`${wsBase}?pid=smoke-u1&name=Al`);
+  const c2 = client(`${wsBase}?pid=smoke-u2&name=Bo`);
   await Promise.all([c1.open, c2.open]);
 
   const s1 = await c1.wait('state');
@@ -68,12 +62,12 @@ try {
   // both ready, host starts
   c1.send({ t: 'ready', v: true });
   c2.send({ t: 'ready', v: true });
-  c1.send({ t: 'start', deck: ['demo:siren', 'demo:beep', 'demo:boing'] });
+  c1.send({ t: 'start', deck: ['siren', 'beep', 'boing'] });
 
   const r1 = await c1.wait('round');
   const r2 = await c2.wait('round');
   assert.equal(r1.i, 0);
-  assert.equal(r1.sound, 'demo:siren');
+  assert.equal(r1.sound, 'siren');
   assert.deepEqual(r2, r1);
 
   c1.send({ t: 'roundReady' });

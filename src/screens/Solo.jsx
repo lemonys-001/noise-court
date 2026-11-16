@@ -1,26 +1,25 @@
 import { useState } from 'react';
 import RoundEngine from '../components/RoundEngine.jsx';
-import { loadManifest, pickDeck, dailyDeck, soundTitle } from '../lib/sounds.js';
-import { api } from '../lib/api.js';
+import { loadManifest, hasSounds, pickDeck, dailyDeck, soundTitle } from '../lib/sounds.js';
 
 const MODES = [
-  { id: 'just', name: 'Just Play', desc: '4 sounds. Safe, risky, focused routes. No lives at stake.' },
+  { id: 'just', name: 'Just Play', desc: '4 sounds. Nothing at stake but pride.' },
   { id: 'survival', name: 'Survival', desc: 'Rising score targets, 3 lives. How deep can you go?' },
-  { id: 'daily', name: 'Daily Streak', desc: '4 deterministic sounds from the UTC date. Same for everyone.' },
+  { id: 'daily', name: 'Daily Streak', desc: '4 sounds picked from the UTC date. Same for everyone.' },
 ];
 
-export default function Solo({ session }) {
+export default function Solo() {
   const [mode, setMode] = useState(null);
   const [deck, setDeck] = useState(null);
   const [results, setResults] = useState(null);
   const [lives, setLives] = useState(3);
-  const [saved, setSaved] = useState(false);
+  const [noSounds, setNoSounds] = useState(false);
 
   const start = async (m) => {
     await loadManifest();
+    if (!hasSounds()) { setNoSounds(true); return; }
     setMode(m);
     setLives(3);
-    setSaved(false);
     setResults(null);
     setDeck(m === 'just' ? pickDeck(Math.random, 4) : m === 'daily' ? dailyDeck(4) : pickDeck(Math.random, 12));
   };
@@ -34,24 +33,28 @@ export default function Solo({ session }) {
   const finish = (res) => {
     setResults(res);
     const total = res.reduce((s, r) => s + r.score, 0);
-    if (session && !saved && total > 0) {
-      setSaved(true);
-      api('/api/score', { method: 'POST', body: { best: total } }).catch(() => {});
-    }
+    try {
+      const prev = Number(localStorage.getItem('nc_best') || 0);
+      if (total > prev) localStorage.setItem('nc_best', String(total));
+    } catch {}
   };
 
   if (results) {
     const total = results.reduce((s, r) => s + r.score, 0);
+    let best = null;
+    try { best = Number(localStorage.getItem('nc_best') || 0); } catch {}
     return (
       <div className="summary">
         <h2 className="bigtitle">{total} pts</h2>
-        <p className="hint">{mode === 'survival' ? `Survived ${results.length} round${results.length === 1 ? '' : 's'}` : `${results.length} sound${results.length === 1 ? '' : 's'}`}</p>
+        <p className="hint">
+          {mode === 'survival' ? `Survived ${results.length} round${results.length === 1 ? '' : 's'}` : `${results.length} sound${results.length === 1 ? '' : 's'}`}
+          {best != null && total >= best ? ' · personal best' : best != null ? ` · best ${best}` : ''}
+        </p>
         <ul className="reslist">
           {results.map((r, i) => (
             <li key={i}><span>{soundTitle(r.soundId)}</span><strong>{r.score}</strong></li>
           ))}
         </ul>
-        {session ? <p className="hint">Saved to the court records.</p> : <p className="hint">Sign in with Google to save your best.</p>}
         <div className="row">
           <button className="btn" onClick={() => start(mode)}>Run it again</button>
           <button className="btn ghost" onClick={() => { setMode(null); setDeck(null); setResults(null); }}>Change mode</button>
@@ -63,9 +66,11 @@ export default function Solo({ session }) {
   if (deck) {
     return (
       <div className="solorun">
-        <div className="livesbar">
-          {mode === 'survival' && [0, 1, 2].map((i) => <span key={i} className={`life ${i < lives ? 'on' : ''}`}>♥</span>)}
-        </div>
+        {mode === 'survival' && (
+          <div className="livesbar">
+            {[0, 1, 2].map((i) => <span key={i} className={`life ${i < lives ? 'on' : ''}`} />)}
+          </div>
+        )}
         <RoundEngine
           deck={deck}
           onTurn={onTurn}
@@ -78,9 +83,15 @@ export default function Solo({ session }) {
 
   return (
     <div className="picker">
-      <h2 className="bigtitle">Pick your set.</h2>
+      <h2 className="bigtitle">Pick your set</h2>
+      {noSounds && (
+        <div className="card nosound">
+          <strong>No sound files yet</strong>
+          <p className="hint">Drop audio into <code>public/sounds/</code> and rebuild — the game picks them up automatically.</p>
+        </div>
+      )}
       {MODES.map((m) => (
-        <button key={m.id} className="card mode wide" onClick={() => start(m.id)}>
+        <button key={m.id} className="mode" onClick={() => start(m.id)}>
           <span className="mode-name">{m.name}</span>
           <span className="mode-desc">{m.desc}</span>
         </button>

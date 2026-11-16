@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import RoundEngine from '../components/RoundEngine.jsx';
-import { loadManifest, pickDeck, soundTitle } from '../lib/sounds.js';
+import { loadManifest, hasSounds, pickDeck } from '../lib/sounds.js';
 
 export default function Party() {
   const [names, setNames] = useState(['', '', '']);
@@ -8,12 +8,14 @@ export default function Party() {
   const [deck, setDeck] = useState(null);
   const [results, setResults] = useState([]);
   const [done, setDone] = useState(null);
+  const [noSounds, setNoSounds] = useState(false);
 
   const valid = names.map((n) => n.trim().slice(0, 12)).filter(Boolean);
   const canStart = valid.length >= 2;
 
   const start = async () => {
     await loadManifest();
+    if (!hasSounds()) { setNoSounds(true); return; }
     setResults([]);
     setPlayers(valid);
     setDeck(pickDeck(Math.random, 4));
@@ -27,10 +29,12 @@ export default function Party() {
     const standings = Object.entries(totals).sort((a, b) => b[1] - a[1]);
     return (
       <div className="summary">
-        <h2 className="bigtitle">{standings[0][0]} takes the crown</h2>
+        <h2 className="bigtitle">{standings[0][0]} takes the court</h2>
         <ul className="reslist">
           {standings.map(([name, score], i) => (
-            <li key={name}><span>{i + 1}. {name}</span><strong>{score}</strong></li>
+            <li key={name} className={i === 0 ? 'winner' : ''}>
+              <span>{i + 1}. {name}</span><strong>{score}</strong>
+            </li>
           ))}
         </ul>
         <div className="row">
@@ -61,8 +65,13 @@ export default function Party() {
 
   return (
     <div className="picker">
-      <h2 className="bigtitle">Who's in?</h2>
-      <p className="hint">2–5 players, one device, taking turns.</p>
+      <h2 className="bigtitle">Who's in</h2>
+      {noSounds && (
+        <div className="card nosound">
+          <strong>No sound files yet</strong>
+          <p className="hint">Drop audio into <code>public/sounds/</code> and rebuild.</p>
+        </div>
+      )}
       {names.map((n, i) => (
         <div className="row" key={i}>
           <input
@@ -73,12 +82,12 @@ export default function Party() {
             onChange={(e) => setNames(names.map((x, j) => (j === i ? e.target.value : x)))}
           />
           {names.length > 2 && (
-            <button className="btn ghost" onClick={() => setNames(names.filter((_, j) => j !== i))}>✕</button>
+            <button className="btn ghost" onClick={() => setNames(names.filter((_, j) => j !== i))}>Remove</button>
           )}
         </div>
       ))}
       {names.length < 5 && (
-        <button className="btn ghost" onClick={() => setNames([...names, ''])}>+ Add player</button>
+        <button className="btn ghost" onClick={() => setNames([...names, ''])}>Add player</button>
       )}
       <button className="btn big" disabled={!canStart} onClick={start}>Start the party</button>
     </div>

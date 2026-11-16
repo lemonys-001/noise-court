@@ -1,1 +1,72 @@
-[]
+[
+  {
+    "id": "a-group-of-planes-about-12-dive-bombers-incoming-from-the-northeast-at-6500-feet",
+    "title": "a group of planes about 12 dive bombers incoming from the northeast at 6500 feet",
+    "file": "/sounds/a-group-of-planes-about-12-dive-bombers-incoming-from-the-northeast-at-6500-feet.mp3"
+  },
+  {
+    "id": "a-lead-indicator-will-also-be-shown-for-a-moving-target",
+    "title": "a lead indicator will also be shown for a moving target",
+    "file": "/sounds/a-lead-indicator-will-also-be-shown-for-a-moving-target.mp3"
+  },
+  {
+    "id": "a-successful-landing",
+    "title": "a successful landing",
+    "file": "/sounds/a-successful-landing.mp3"
+  },
+  {
+    "id": "affirmative",
+    "title": "affirmative",
+    "file": "/sounds/affirmative.mp3"
+  },
+  {
+    "id": "all-targets-destroyed-victory",
+    "title": "all targets destroyed victory",
+    "file": "/sounds/all-targets-destroyed-victory.mp3"
+  },
+  {
+    "id": "allied-forces-have-captured-his-own",
+    "title": "allied forces have captured his own",
+    "file": "/sounds/allied-forces-have-captured-his-own.mp3"
+  },
+  {
+    "id": "any-questions",
+    "title": "any questions",
+    "file": "/sounds/any-questions.mp3"
+  },
+  {
+    "id": "attack-enemy-base",
+    "title": "attack enemy base",
+    "file": "/sounds/attack-enemy-base.mp3"
+  },
+  {
+    "id": "attack-the-a-point",
+    "title": "attack the a point",
+    "file": "/sounds/attack-the-a-point.mp3"
+  },
+  {
+    "id": "attack-the-b-point",
+    "title": "attack the b point",
+    "file": "/sounds/attack-the-b-point.mp3"
+  },
+  {
+    "id": "attack-the-c-point",
+    "title": "attack the c point",
+    "file": "/sounds/attack-the-c-point.mp3"
+  },
+  {
+    "id": "attack-the-d-point",
+    "title": "attack the d point",
+    "file": "/sounds/attack-the-d-point.mp3"
+  },
+  {
+    "id": "beautiful",
+    "title": "beautiful",
+    "file": "/sounds/beautiful.mp3"
+  },
+  {
+    "id": "bravo",
+    "title": "bravo",
+    "file": "/sounds/bravo.mp3"
+  }
+]

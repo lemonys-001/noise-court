@@ -1,76 +1,51 @@
 # Noise Court
 
-A browser voice party game — one sound, one shot. The room hears a reference
-sound, everyone gets a single take to mimic it with their own voice, a local
-pitch/rhythm matcher grades it 0–100, and a wheel deals out points, multipliers
-and sabotages between rounds.
+A voice party game: one sound, one shot. The room hears a sound once, everyone
+mimics it with their own voice in a single take of exactly the same length,
+every take plays back, and a wheel hands out multipliers and sabotage.
+Independent clone of the *Mimic Party* format — not affiliated with FoliesAPP
+or the Steam release.
 
-Independent fan-styled game inspired by Mimic Party (FoliesAPP). No official
-assets, audio or branding are used.
+**No accounts.** You pick a nickname and get a stable browser id; a room code
+is all that connects players. No sign-in, no secrets, no third-party auth.
 
 ## Modes
 
-- **Solo** — Just Play (4 sounds), Survival (rising targets, 3 lives), Daily Streak (UTC-seeded picks)
-- **Pass the mic** — 2–5 friends on one device, turn-based
-- **Online rooms** — private room codes, 2–5 players on separate devices, takes replayed to everyone with sabotage effects
-
-## Stack
-
-- React + Vite SPA, plain CSS
-- Single Cloudflare Worker: static assets + `/api/*` + WebSocket rooms
-- Durable Objects (SQLite): `Room` (realtime game state) and `Leaderboard`
-- Google Sign-In (GIS ID token) verified server-side with Google's JWKS → signed `__Host-` session cookie
-- Scoring is client-side DSP (autocorrelation pitch + banded DTW vs the reference). No audio leaves your device except optional take sharing in online rooms.
+- **Solo** — Just Play (4 sounds), Survival (rising score targets, 3 lives),
+  Daily Streak (4 sounds seeded from the UTC date). Personal best saved locally.
+- **Pass the mic** — 2–5 friends on one device, turn by turn.
+- **Room code** — online, 2–5 players on separate devices, hosted on a Cloudflare Worker.
 
 ## Sounds
 
-Drop your own audio files into `public/sounds/` (mp3/ogg/m4a/wav/webm), then:
+Drop audio files into `public/sounds/` (mp3, ogg, m4a, wav, webm, aac, flac).
+They are picked up automatically: `npm run dev` and `npm run build` both scan
+the folder and regenerate `public/sounds/manifest.json`. To run it by hand:
 
 ```
-npm run sounds
+node scripts/sounds.mjs
 ```
 
-regenerates `public/sounds/manifest.json`. No files? The app synthesizes four
-demo sounds in-browser so it always runs. Use headphones — the reference bleed
-into your mic hurts your score.
-
-## Develop
+## Development
 
 ```
-cp .dev.vars.example .dev.vars   # set a SESSION_SECRET (any random string)
 npm install
-npm run dev:cf                   # build + wrangler dev (full stack, http://localhost:8787)
-npm test                         # scoring unit tests (node --test)
-npm run smoke                    # end-to-end room test (2 WS clients through a real DO)
+npm run dev        # vite dev server (frontend only; rooms need a deploy or wrangler dev)
+npm test           # pure-DSP scoring tests + mock-DO room protocol tests
+npm run smoke      # boots the real worker (workerd) and drives a full 2-player game
 ```
 
-`DEV_BYPASS_AUTH=1` in `.dev.vars` lets smoke tests join rooms without Google.
+`npm run smoke` needs a machine that can run workerd; it is skipped in
+restricted sandboxes.
 
-## Deploy
+## Deploy (Cloudflare Workers)
 
-1. **Google client**: Google Cloud Console → APIs & Services → Credentials →
-   OAuth client ID (Web). Authorized JavaScript origins:
-   `https://<your-worker>.<account>.workers.dev` (and `http://localhost:8787` for dev).
-2. **Secrets**:
-   ```
-   wrangler login
-   npx wrangler secret put SESSION_SECRET   # long random string
-   npx wrangler secret put GOOGLE_CLIENT_ID # the OAuth client ID
-   ```
-3. **Deploy** (Durable Object migration runs automatically on first deploy):
-   ```
-   npm run deploy
-   ```
-4. Optional: attach a custom domain in the Cloudflare dashboard.
+```
+npm install -g wrangler   # or: npm i -D wrangler
+wrangler login
+npm run build
+npm run deploy
+```
 
-Free plan is enough: Workers static assets + SQLite Durable Objects.
-
-## Limits / notes
-
-- Scores are computed in the browser and trusted by the room server — fine for
-  playing with friends, not an anti-cheat boundary.
-- Online takes (≤ ~10 s, ≤ 96 KB base64) live in the Room DO and are deleted
-  when the room ends (2 h TTL, or 10 min after everyone leaves).
-- No live voice chat; open your own call. 120 s per round, then a missing take scores 0.
-- The wheel is server-side RNG: 45% nothing, 20% +50, 15% ×2, 10% ×½, 10% sabotage
-  (saturation / echo / pitch drop / chop / fart) on the victim's next take.
+`wrangler.jsonc` declares one Durable Object (`Room`, SQLite-backed) — nothing
+else to configure, no env vars, no secrets.

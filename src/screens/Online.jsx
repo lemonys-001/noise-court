@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import MicTake from '../components/MicTake.jsx';
-import UserChip from '../components/UserChip.jsx';
 import { roomSocket } from '../lib/ws.js';
-import { getSoundBuffer, loadManifest, pickDeck, soundTitle } from '../lib/sounds.js';
+import { getSoundBuffer, loadManifest, hasSounds, pickDeck, soundTitle } from '../lib/sounds.js';
 import { decode, play, toMono } from '../lib/audio.js';
 import { analyze } from '../lib/score.js';
 import { applyEffect } from '../lib/effects.js';
@@ -29,41 +28,62 @@ function genCode() {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export default function Online({ code, session, clientId, setSession }) {
-  if (!code) return <Landing session={session} />;
-  return <Game key={code} code={code} session={session} clientId={clientId} setSession={setSession} />;
+function playerId() {
+  let pid = null;
+  try { pid = localStorage.getItem('nc_pid'); } catch {}
+  if (!pid) {
+    pid = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}${Math.random()}`).replace(/[^A-Za-z0-9_-]/g, '');
+    try { localStorage.setItem('nc_pid', pid); } catch {}
+  }
+  return pid;
 }
 
-function Landing({ session }) {
+function savedName() {
+  try { return localStorage.getItem('nc_name') || ''; } catch {}
+  return '';
+}
+
+export default function Online({ code }) {
+  if (!code) return <Landing />;
+  return <Game key={code} code={code} />;
+}
+
+function Landing() {
+  const [name, setName] = useState(savedName);
   const [join, setJoin] = useState('');
+  const save = (n) => {
+    setName(n);
+    try { localStorage.setItem('nc_name', n.trim().slice(0, 18)); } catch {}
+  };
+  const go = (roomCode) => {
+    if (!name.trim()) return;
+    location.hash = `#/room/${roomCode}`;
+  };
+
   return (
     <div className="picker">
       <h2 className="bigtitle">Online rooms</h2>
-      <p className="hint">2–5 players, separate devices, private room codes. Takes replay to everyone. Sign in with Google first (top right).</p>
-      <button
-        className="btn big"
-        disabled={!session}
-        onClick={() => { location.hash = `#/room/${genCode()}`; }}
-      >
-        Create a room
-      </button>
+      <label className="fieldlabel" htmlFor="nick">Your nickname</label>
+      <input id="nick" className="input namewide" placeholder="e.g. Screaming Mimi"
+        maxLength={18} value={name}
+        onChange={(e) => save(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && name.trim() && join.length >= 3 && go(join)} />
+      <div className="row">
+        <button className="btn big" disabled={!name.trim()} onClick={() => go(genCode())}>Create a room</button>
+      </div>
       <div className="row">
         <input className="input codeinput" placeholder="CODE" maxLength={8}
           value={join}
           onChange={(e) => setJoin(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
-          onKeyDown={(e) => e.key === 'Enter' && join.length >= 3 && (location.hash = `#/room/${join}`)}
-        />
-        <button className="btn" disabled={join.length < 3 || !session}
-          onClick={() => { location.hash = `#/room/${join}`; }}>
-          Join
-        </button>
+          onKeyDown={(e) => e.key === 'Enter' && name.trim() && join.length >= 3 && go(join)} />
+        <button className="btn" disabled={join.length < 3 || !name.trim()} onClick={() => go(join)}>Join</button>
       </div>
-      {!session && <p className="hint">Sign in to create or join rooms.</p>}
+      <p className="hint">No accounts — a nickname and a room code are all there is.</p>
     </div>
   );
 }
 
-function Game({ code, session, clientId, setSession }) {
+function Game({ code }) {
   const [snap, setSnap] = useState(null);
   const [view, setView] = useState('connecting'); // lobby | loading | round | takes | wheel | end
   const [round, setRound] = useState(null);
@@ -83,16 +103,17 @@ function Game({ code, session, clientId, setSession }) {
   const wsRef = useRef(null);
   const viewRef = useRef(view);
   viewRef.current = view;
+  const pid = useRef(playerId()).current;
+  const name = useRef(savedName() || 'Player').current;
 
   useEffect(() => {
-    if (!session) return;
-    const ws = roomSocket(code, {
+    const ws = roomSocket(`${code}?pid=${pid}&name=${encodeURIComponent(name)}`, {
       onMsg: handle,
       onClose: () => setErr('Connection lost. Refresh to rejoin.'),
     });
     wsRef.current = ws;
     return () => ws.close();
-  }, [code, session]);
+  }, [code]);
 
   function handle(m) {
     switch (m.t) {
@@ -144,7 +165,6 @@ function Game({ code, session, clientId, setSession }) {
       const buffer = await getSoundBuffer(id);
       const mono = await toMono(buffer);
       setRefSound({ buffer, frames: analyze(mono.getChannelData(0), 16000) });
-      if (go) setView('round');
     } catch {
       setErr(`Sound "${soundTitle(id)}" failed to load. Waiting for the round to time out.`);
     }
@@ -199,19 +219,9 @@ function Game({ code, session, clientId, setSession }) {
   if (err) {
     return (
       <div className="picker">
-        <div className="card errcard">{err}</div>
+        <div className="card nosound">{err}</div>
         <button className="btn" onClick={() => location.reload()}>Reload</button>
         <button className="btn ghost" onClick={() => { location.hash = '#/room'; }}>Back to rooms</button>
-      </div>
-    );
-  }
-
-  if (!session) {
-    return (
-      <div className="picker">
-        <h2 className="bigtitle">Room {code}</h2>
-        <p className="hint">Sign in with Google to play online rooms.</p>
-        <UserChip session={session} setSession={setSession} clientId={clientId} />
       </div>
     );
   }
@@ -220,9 +230,8 @@ function Game({ code, session, clientId, setSession }) {
     return <div className="prep"><div className="spinner" /><p>Knocking on room {code}…</p></div>;
   }
 
-  const me = snap.players.find((p) => p.sub) || null;
-  const mySub = session.sub;
-  const isHost = snap.hostSub === mySub;
+  const isHost = snap.hostSub === pid;
+  const me = snap.players.find((p) => p.sub === pid);
 
   if (view === 'lobby') {
     const link = `${location.origin}${location.pathname}#/room/${snap.code}`;
@@ -233,42 +242,47 @@ function Game({ code, session, clientId, setSession }) {
           <span className="codelabel">Room code</span>
           <span className="bigcode">{snap.code}</span>
           <button className="btn ghost" onClick={() => { navigator.clipboard?.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
-            {copied ? 'Copied!' : 'Copy invite link'}
+            {copied ? 'Copied' : 'Copy invite link'}
           </button>
         </div>
         <ul className="playergrid">
           {snap.players.map((p) => (
-            <li key={p.sub} className={`card player ${p.connected ? '' : 'off'} ${p.sub === mySub ? 'me' : ''}`}>
-              {p.pic ? <img src={p.pic} alt="" referrerPolicy="no-referrer" /> : <span className="avatar-fallback">{p.name[0]}</span>}
-              <span className="pname">{p.name}{p.sub === snap.hostSub ? ' (host)' : ''}</span>
+            <li key={p.sub} className={`card player ${p.connected ? '' : 'off'} ${p.sub === pid ? 'me' : ''}`}>
+              <span className="avatar-fallback">{p.name[0]}</span>
+              <span className="pname">{p.name}{p.sub === snap.hostSub ? ' · host' : ''}</span>
               <span className={`pstatus ${p.ready ? 'ok' : ''}`}>{p.connected ? (p.ready ? 'ready' : 'not ready') : 'away'}</span>
             </li>
           ))}
         </ul>
-        {snap.players.length < 5 && <p className="hint">Waiting for up to {5 - snap.players.length} more.</p>}
+        {snap.players.length < 5 && <p className="hint">Room holds up to 5 players.</p>}
         <div className="row">
           {isHost ? (
             <>
-              <label className="chip">Rounds
+              <label className="fieldlabel inline">Rounds
                 <select value={rounds} onChange={(e) => setRounds(+e.target.value)}>
                   {[3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
                 </select>
               </label>
-              <button className="btn big" disabled={!allReady}
-                onClick={() => loadManifest().then(() => {
-                  wsRef.current.send({ t: 'start', deck: pickDeck(Math.random, rounds) });
-                })}>
+              <button className="btn big" disabled={!allReady || !hasSounds()}
+                onClick={() => {
+                  loadManifest().then(() => {
+                    const deck = pickDeck(Math.random, rounds);
+                    if (!deck.length) { setErr('No sound files available.'); return; }
+                    wsRef.current.send({ t: 'start', deck });
+                  });
+                }}>
                 Start
               </button>
             </>
           ) : (
             <button className="btn big"
-              onClick={() => wsRef.current.send({ t: 'ready', v: !snap.players.find((p) => p.sub === mySub).ready })}>
-              {snap.players.find((p) => p.sub === mySub)?.ready ? 'Not ready' : 'Ready'}
+              onClick={() => wsRef.current.send({ t: "ready", v: !me?.ready })}>
+              {me?.ready ? "Not ready" : "Ready"}
             </button>
           )}
         </div>
-        {!allReady && <p className="hint">Host can start when everyone is ready (2+ players).</p>}
+        {!hasSounds() && <p className="hint">No sound files on the server yet — the host can't start.</p>}
+        {!allReady && hasSounds() && <p className="hint">Host can start when everyone is ready (2+ players).</p>}
       </div>
     );
   }
@@ -286,9 +300,9 @@ function Game({ code, session, clientId, setSession }) {
     return (
       <div className="engine">
         <header className="roundhead">
-          <span className="chip">Round {round.i + 1}/{snap.deckLen}</span>
+          <span className="tag">Round {round.i + 1}/{snap.deckLen}</span>
           <h2 className="soundtitle">{soundTitle(round.sound)}</h2>
-          <span className="hint">{mineSent ? `Sent. Waiting for others (${submitted.n}/${submitted.need})…` : `${submitted.n}/${submitted.need} submitted`}</span>
+          <span className="hint">{mineSent ? `Sent — waiting for others (${submitted.n}/${submitted.need})` : `${submitted.n}/${submitted.need} submitted`}</span>
         </header>
         {!mineSent && refSound && go && (
           <MicTake refBuffer={refSound.buffer} refFrames={refSound.frames}
@@ -314,7 +328,7 @@ function Game({ code, session, clientId, setSession }) {
           {takes.map((t, i) => (
             <li key={t.sub} className={`card take ${i === nowTake ? 'playing' : ''}`}>
               <span className="tname">{t.name}</span>
-              {t.sab && t.sab !== 'none' && <span className="chip sab">⚠ {EFFECT_LABELS[t.sab] || t.sab}</span>}
+              {t.sab && t.sab !== 'none' && <span className="tag sab">{EFFECT_LABELS[t.sab] || t.sab}</span>}
               <span className="tscore">{t.score}</span>
             </li>
           ))}
@@ -325,7 +339,7 @@ function Game({ code, session, clientId, setSession }) {
   }
 
   if (view === 'wheel') {
-    const myCard = cards[mySub];
+    const myCard = cards[pid];
     return (
       <div className="wheelview">
         <div className={`wheel ${spin ? 'spin' : ''}`} />
@@ -339,8 +353,8 @@ function Game({ code, session, clientId, setSession }) {
         )}
         <ul className="cardlist">
           {snap.players.map((p) => (
-            <li key={p.sub} className="chip">
-              {p.name}: {cards[p.sub] ? (cards[p.sub].k === 'sab' ? `⚠ ${EFFECT_LABELS[cards[p.sub].e]}` : CARD_LABELS[cards[p.sub].k]) : '—'}
+            <li key={p.sub} className="tag">
+              {p.name}: {cards[p.sub] ? (cards[p.sub].k === 'sab' ? `${EFFECT_LABELS[cards[p.sub].e]}` : CARD_LABELS[cards[p.sub].k]) : '—'}
             </li>
           ))}
         </ul>
@@ -356,8 +370,8 @@ function Game({ code, session, clientId, setSession }) {
         <h2 className="bigtitle">Final court</h2>
         <ul className="reslist">
           {standings.map((s, i) => (
-            <li key={s.sub}>
-              <span>{i === 0 ? '🏆 ' : `${i + 1}. `}{s.name}</span>
+            <li key={s.sub} className={i === 0 ? 'winner' : ''}>
+              <span>{i + 1}. {s.name}</span>
               <strong>{s.score}</strong>
             </li>
           ))}
