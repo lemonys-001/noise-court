@@ -18,7 +18,7 @@
     ]
   },
   "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["Room"] },
+    { "tag": "v1", "new_sqlite_classes": ["Room", "Leaderboard"] },
     { "tag": "v2", "deleted_classes": ["Leaderboard"] }
   ]
 }
